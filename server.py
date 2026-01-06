@@ -20,8 +20,12 @@ load_dotenv()
 
 # Configure logging
 logging.basicConfig(
-    level=logging.WARN,  # Change to INFO level to show more details
+    level=logging.INFO,  # Changed to INFO to see more details in logs
     format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler("server.log")
+    ]
 )
 logger = logging.getLogger(__name__)
 
@@ -81,6 +85,8 @@ app = FastAPI()
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY")
+
 
 # Get Vertex AI project and location from environment (if set)
 VERTEX_PROJECT = os.environ.get("VERTEX_PROJECT", "unset")
@@ -116,10 +122,15 @@ OPENAI_MODELS = [
     "gpt-4.1-mini" # Added default small model
 ]
 
-# List of Gemini models
 GEMINI_MODELS = [
     "gemini-2.5-flash",
     "gemini-2.5-pro"
+]
+
+# List of DeepSeek models
+DEEPSEEK_MODELS = [
+    "deepseek-chat",
+    "deepseek-reasoner"
 ]
 
 # Helper function to clean schema for Gemini
@@ -212,6 +223,8 @@ class MessagesRequest(BaseModel):
             clean_v = clean_v[7:]
         elif clean_v.startswith('gemini/'):
             clean_v = clean_v[7:]
+        elif clean_v.startswith('deepseek/'):
+            clean_v = clean_v[9:]
 
         # --- Mapping Logic --- START ---
         mapped = False
@@ -225,6 +238,9 @@ class MessagesRequest(BaseModel):
             if PREFERRED_PROVIDER == "google" and SMALL_MODEL in GEMINI_MODELS:
                 new_model = f"gemini/{SMALL_MODEL}"
                 mapped = True
+            elif PREFERRED_PROVIDER == "deepseek" and SMALL_MODEL in DEEPSEEK_MODELS:
+                new_model = f"deepseek/{SMALL_MODEL}"
+                mapped = True
             else:
                 new_model = f"openai/{SMALL_MODEL}"
                 mapped = True
@@ -233,6 +249,9 @@ class MessagesRequest(BaseModel):
         elif 'sonnet' in clean_v.lower():
             if PREFERRED_PROVIDER == "google" and BIG_MODEL in GEMINI_MODELS:
                 new_model = f"gemini/{BIG_MODEL}"
+                mapped = True
+            elif PREFERRED_PROVIDER == "deepseek" and BIG_MODEL in DEEPSEEK_MODELS:
+                new_model = f"deepseek/{BIG_MODEL}"
                 mapped = True
             else:
                 new_model = f"openai/{BIG_MODEL}"
@@ -246,14 +265,17 @@ class MessagesRequest(BaseModel):
             elif clean_v in OPENAI_MODELS and not v.startswith('openai/'):
                 new_model = f"openai/{clean_v}"
                 mapped = True # Technically mapped to add prefix
+            elif clean_v in DEEPSEEK_MODELS and not v.startswith('deepseek/'):
+                new_model = f"deepseek/{clean_v}"
+                mapped = True # Technically mapped to add prefix
         # --- Mapping Logic --- END ---
 
         if mapped:
             logger.debug(f"📌 MODEL MAPPING: '{original_model}' ➡️ '{new_model}'")
         else:
              # If no mapping occurred and no prefix exists, log warning or decide default
-             if not v.startswith(('openai/', 'gemini/', 'anthropic/')):
-                 logger.warning(f"⚠️ No prefix or mapping rule for model: '{original_model}'. Using as is.")
+             if not v.startswith(('openai/', 'gemini/', 'anthropic/', 'deepseek/')):
+                  logger.warning(f"⚠️ No prefix or mapping rule for model: '{original_model}'. Using as is.")
              new_model = v # Ensure we return the original if no rule applied
 
         # Store the original model in the values dictionary
@@ -290,6 +312,8 @@ class TokenCountRequest(BaseModel):
             clean_v = clean_v[7:]
         elif clean_v.startswith('gemini/'):
             clean_v = clean_v[7:]
+        elif clean_v.startswith('deepseek/'):
+            clean_v = clean_v[9:]
 
         # --- Mapping Logic --- START ---
         mapped = False
@@ -297,6 +321,9 @@ class TokenCountRequest(BaseModel):
         if 'haiku' in clean_v.lower():
             if PREFERRED_PROVIDER == "google" and SMALL_MODEL in GEMINI_MODELS:
                 new_model = f"gemini/{SMALL_MODEL}"
+                mapped = True
+            elif PREFERRED_PROVIDER == "deepseek" and SMALL_MODEL in DEEPSEEK_MODELS:
+                new_model = f"deepseek/{SMALL_MODEL}"
                 mapped = True
             else:
                 new_model = f"openai/{SMALL_MODEL}"
@@ -306,6 +333,9 @@ class TokenCountRequest(BaseModel):
         elif 'sonnet' in clean_v.lower():
             if PREFERRED_PROVIDER == "google" and BIG_MODEL in GEMINI_MODELS:
                 new_model = f"gemini/{BIG_MODEL}"
+                mapped = True
+            elif PREFERRED_PROVIDER == "deepseek" and BIG_MODEL in DEEPSEEK_MODELS:
+                new_model = f"deepseek/{BIG_MODEL}"
                 mapped = True
             else:
                 new_model = f"openai/{BIG_MODEL}"
@@ -319,12 +349,15 @@ class TokenCountRequest(BaseModel):
             elif clean_v in OPENAI_MODELS and not v.startswith('openai/'):
                 new_model = f"openai/{clean_v}"
                 mapped = True # Technically mapped to add prefix
+            elif clean_v in DEEPSEEK_MODELS and not v.startswith('deepseek/'):
+                new_model = f"deepseek/{clean_v}"
+                mapped = True # Technically mapped to add prefix
         # --- Mapping Logic --- END ---
 
         if mapped:
             logger.debug(f"📌 TOKEN COUNT MAPPING: '{original_model}' ➡️ '{new_model}'")
         else:
-             if not v.startswith(('openai/', 'gemini/', 'anthropic/')):
+             if not v.startswith(('openai/', 'gemini/', 'anthropic/', 'deepseek/')):
                  logger.warning(f"⚠️ No prefix or mapping rule for token count model: '{original_model}'. Using as is.")
              new_model = v # Ensure we return the original if no rule applied
 
@@ -548,9 +581,9 @@ def convert_anthropic_to_litellm(anthropic_request: MessagesRequest) -> Dict[str
     
     # Cap max_tokens for OpenAI models to their limit of 16384
     max_tokens = anthropic_request.max_tokens
-    if anthropic_request.model.startswith("openai/") or anthropic_request.model.startswith("gemini/"):
+    if anthropic_request.model.startswith("openai/") or anthropic_request.model.startswith("gemini/") or anthropic_request.model.startswith("deepseek/"):
         max_tokens = min(max_tokens, 16384)
-        logger.debug(f"Capping max_tokens to 16384 for OpenAI/Gemini model (original value: {anthropic_request.max_tokens})")
+        logger.debug(f"Capping max_tokens to 16384 for OpenAI/Gemini/DeepSeek model (original value: {anthropic_request.max_tokens})")
     
     # Create LiteLLM request dict
     litellm_request = {
@@ -798,10 +831,20 @@ def convert_litellm_to_anthropic(litellm_response: Union[Dict[str, Any], Any],
         if not content:
             content.append({"type": "text", "text": ""})
         
+        # Custom branding: Rename models in the response to DeepSeek if they were mapped
+        display_model = original_request.model
+        if "deepseek/deepseek-reasoner" in original_request.model:
+            display_model = "deepseek-reasoner"
+        elif "deepseek/deepseek-chat" in original_request.model:
+            display_model = "deepseek-chat"
+        elif "deepseek-" in original_request.model:
+             # Already a deepseek model but might have prefix
+             display_model = original_request.model.split("/")[-1]
+
         # Create Anthropic-style response
         anthropic_response = MessagesResponse(
             id=response_id,
-            model=original_request.model,
+            model=display_model,
             role="assistant",
             content=content,
             stop_reason=stop_reason,
@@ -836,13 +879,22 @@ async def handle_streaming(response_generator, original_request: MessagesRequest
         # Send message_start event
         message_id = f"msg_{uuid.uuid4().hex[:24]}"  # Format similar to Anthropic's IDs
         
+        # Custom branding for streaming start
+        display_model = original_request.model
+        if "deepseek/deepseek-reasoner" in original_request.model:
+            display_model = "deepseek-reasoner"
+        elif "deepseek/deepseek-chat" in original_request.model:
+            display_model = "deepseek-chat"
+        elif "deepseek-" in original_request.model:
+             display_model = original_request.model.split("/")[-1]
+
         message_data = {
             'type': 'message_start',
             'message': {
                 'id': message_id,
                 'type': 'message',
                 'role': 'assistant',
-                'model': original_request.model,
+                'model': display_model,
                 'content': [],
                 'stop_reason': None,
                 'stop_sequence': None,
@@ -1122,31 +1174,37 @@ async def create_message(
         # Convert Anthropic request to LiteLLM format
         litellm_request = convert_anthropic_to_litellm(request)
         
-        # Determine which API key to use based on the model
-        if request.model.startswith("openai/"):
-            litellm_request["api_key"] = OPENAI_API_KEY
-            # Use custom OpenAI base URL if configured
-            if OPENAI_BASE_URL:
-                litellm_request["api_base"] = OPENAI_BASE_URL
-                logger.debug(f"Using OpenAI API key and custom base URL {OPENAI_BASE_URL} for model: {request.model}")
-            else:
-                logger.debug(f"Using OpenAI API key for model: {request.model}")
-        elif request.model.startswith("gemini/"):
+        # Strip any existing prefixes to ensure a clean start
+        model_name = request.model
+        if "/" in model_name:
+            model_name = model_name.split("/")[-1]
+
+        # Re-prefixing and key selection logic
+        if "deepseek" in request.model.lower() or PREFERRED_PROVIDER == "deepseek":
+            litellm_request["api_key"] = DEEPSEEK_API_KEY
+            litellm_request["api_base"] = "https://api.deepseek.com/v1"
+            litellm_request["model"] = f"openai/{model_name}"
+            logger.debug(f"ROUTING TO DEEPSEEK: model={litellm_request['model']}, base={litellm_request['api_base']}")
+        elif "gemini" in request.model.lower() or PREFERRED_PROVIDER == "google":
             if USE_VERTEX_AUTH:
                 litellm_request["vertex_project"] = VERTEX_PROJECT
                 litellm_request["vertex_location"] = VERTEX_LOCATION
                 litellm_request["custom_llm_provider"] = "vertex_ai"
-                logger.debug(f"Using Gemini ADC with project={VERTEX_PROJECT}, location={VERTEX_LOCATION} and model: {request.model}")
             else:
                 litellm_request["api_key"] = GEMINI_API_KEY
-                logger.debug(f"Using Gemini API key for model: {request.model}")
+            litellm_request["model"] = f"gemini/{model_name}"
+        elif "openai" in request.model.lower() or PREFERRED_PROVIDER == "openai":
+            litellm_request["api_key"] = OPENAI_API_KEY
+            if OPENAI_BASE_URL:
+                litellm_request["api_base"] = OPENAI_BASE_URL
+            litellm_request["model"] = f"openai/{model_name}"
         else:
             litellm_request["api_key"] = ANTHROPIC_API_KEY
-            logger.debug(f"Using Anthropic API key for model: {request.model}")
+            litellm_request["model"] = f"anthropic/{model_name}"
         
-        # For OpenAI models - modify request format to work with limitations
-        if "openai" in litellm_request["model"] and "messages" in litellm_request:
-            logger.debug(f"Processing OpenAI model request: {litellm_request['model']}")
+        # For OpenAI and DeepSeek models - modify request format to work with limitations
+        if (litellm_request["model"].startswith("openai/") or litellm_request["model"].startswith("deepseek/")) and "messages" in litellm_request:
+            logger.debug(f"Processing OpenAI/DeepSeek model request: {litellm_request['model']}")
             
             # For OpenAI models, we need to convert content blocks to simple strings
             # and handle other requirements
@@ -1299,6 +1357,9 @@ async def create_message(
                 num_tools,
                 200  # Assuming success at this point
             )
+            # Log exact request details for debugging
+            logger.info(f"LITELLM REQUEST: model={litellm_request.get('model')}, api_base={litellm_request.get('api_base')}, api_key={litellm_request.get('api_key')[:8]}...")
+            
             # Ensure we use the async version for streaming
             response_generator = await litellm.acompletion(**litellm_request)
             
@@ -1319,6 +1380,9 @@ async def create_message(
                 num_tools,
                 200  # Assuming success at this point
             )
+            # Log exact request details for debugging
+            logger.info(f"LITELLM REQUEST: model={litellm_request.get('model')}, api_base={litellm_request.get('api_base')}, api_key={litellm_request.get('api_key')[:8]}...")
+            
             start_time = time.time()
             litellm_response = litellm.completion(**litellm_request)
             logger.debug(f"✅ RESPONSE RECEIVED: Model={litellm_request.get('model')}, Time={time.time() - start_time:.2f}s")
@@ -1444,6 +1508,9 @@ async def count_tokens(
             # Add custom base URL for OpenAI models if configured
             if request.model.startswith("openai/") and OPENAI_BASE_URL:
                 token_counter_args["api_base"] = OPENAI_BASE_URL
+            elif request.model.startswith("deepseek/"):
+                # Use native LiteLLM support
+                token_counter_args["model"] = request.model
             
             # Count tokens
             token_count = token_counter(**token_counter_args)
@@ -1506,9 +1573,9 @@ def log_request_beautifully(method, path, claude_model, openai_model, num_messag
     log_line = f"{Colors.BOLD}{method} {endpoint}{Colors.RESET} {status_str}"
     model_line = f"{claude_display} → {openai_display} {tools_str} {messages_str}"
     
-    # Print to console
-    print(log_line)
-    print(model_line)
+    # Print to console and log file
+    logger.info(log_line)
+    logger.info(model_line)
     sys.stdout.flush()
 
 if __name__ == "__main__":

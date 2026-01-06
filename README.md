@@ -14,6 +14,7 @@ A proxy server that lets you use Anthropic clients with Gemini, OpenAI, or Anthr
 - OpenAI API key 🔑
 - Google AI Studio (Gemini) API key (if using Google provider) 🔑
 - Google Cloud Project with Vertex AI API enabled (if using Application Default Credentials for Gemini) ☁️
+- DeepSeek API key (if using DeepSeek provider) 🔑
 - [uv](https://github.com/astral-sh/uv) installed.
 
 ### Setup 🛠️
@@ -35,30 +36,47 @@ A proxy server that lets you use Anthropic clients with Gemini, OpenAI, or Anthr
 3. **Configure Environment Variables**:
    Copy the example environment file:
    ```bash
-   cp .env.example .env
-   ```
-   Edit `.env` and fill in your API keys and model configurations:
+1.  **Clone this repository**:
+    ```bash
+    git clone https://github.com/1rgs/claude-code-proxy.git
+    cd claude-code-proxy
+    ```
 
-   *   `ANTHROPIC_API_KEY`: (Optional) Needed only if proxying *to* Anthropic models.
-   *   `OPENAI_API_KEY`: Your OpenAI API key (Required if using the default OpenAI preference or as fallback).
-   *   `GEMINI_API_KEY`: Your Google AI Studio (Gemini) API key (Required if `PREFERRED_PROVIDER=google` and `USE_VERTEX_AUTH=true`).
-   *   `USE_VERTEX_AUTH` (Optional): Set to `true` to use Application Default Credentials (ADC) will be used (no static API key required). Note: when USE_VERTEX_AUTH=true, you must configure `VERTEX_PROJECT` and `VERTEX_LOCATION`.
-   *   `VERTEX_PROJECT` (Optional): Your Google Cloud Project ID (Required if `PREFERRED_PROVIDER=google` and `USE_VERTEX_AUTH=true`).
-   *   `VERTEX_LOCATION` (Optional): The Google Cloud region for Vertex AI (e.g., `us-central1`) (Required if `PREFERRED_PROVIDER=google` and `USE_VERTEX_AUTH=true`).
-   *   `PREFERRED_PROVIDER` (Optional): Set to `openai` (default), `google`, or `anthropic`. This determines the primary backend for mapping `haiku`/`sonnet`.
-   *   `BIG_MODEL` (Optional): The model to map `sonnet` requests to. Defaults to `gpt-4.1` (if `PREFERRED_PROVIDER=openai`) or `gemini-2.5-pro-preview-03-25`. Ignored when `PREFERRED_PROVIDER=anthropic`.
-   *   `SMALL_MODEL` (Optional): The model to map `haiku` requests to. Defaults to `gpt-4.1-mini` (if `PREFERRED_PROVIDER=openai`) or `gemini-2.0-flash`. Ignored when `PREFERRED_PROVIDER=anthropic`.
+2.  **Install uv** (if you haven't already):
+    ```bash
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    ```
+    *(`uv` will handle dependencies based on `pyproject.toml` when you run the server)*
 
-   **Mapping Logic:**
-   - If `PREFERRED_PROVIDER=openai` (default), `haiku`/`sonnet` map to `SMALL_MODEL`/`BIG_MODEL` prefixed with `openai/`.
-   - If `PREFERRED_PROVIDER=google`, `haiku`/`sonnet` map to `SMALL_MODEL`/`BIG_MODEL` prefixed with `gemini/` *if* those models are in the server's known `GEMINI_MODELS` list (otherwise falls back to OpenAI mapping).
-   - If `PREFERRED_PROVIDER=anthropic`, `haiku`/`sonnet` requests are passed directly to Anthropic with the `anthropic/` prefix without remapping to different models.
+3.  **Configure Environment Variables**:
+    Copy the example environment file:
+    ```bash
+    cp .env.example .env
+    ```
+    Edit `.env` and fill in your API keys and model configurations:
 
-4. **Run the server**:
-   ```bash
-   uv run uvicorn server:app --host 0.0.0.0 --port 8082 --reload
-   ```
-   *(`--reload` is optional, for development)*
+    *   `ANTHROPIC_API_KEY`: (Optional) Needed only if proxying *to* Anthropic models.
+    *   `OPENAI_API_KEY`: Your OpenAI API key (Required if using the default OpenAI preference or as fallback).
+    *   `GEMINI_API_KEY`: Your Google AI Studio (Gemini) API key (Required if `PREFERRED_PROVIDER=google` and `USE_VERTEX_AUTH=false`).
+    *   `DEEPSEEK_API_KEY`: Your DeepSeek API key (Required if `PREFERRED_PROVIDER=deepseek`).
+    *   `USE_VERTEX_AUTH` (Optional): Set to `true` to use Application Default Credentials (ADC) will be used (no static API key required). Note: when USE_VERTEX_AUTH=true, you must configure `VERTEX_PROJECT` and `VERTEX_LOCATION`.
+    *   `VERTEX_PROJECT` (Optional): Your Google Cloud Project ID (Required if `PREFERRED_PROVIDER=google` and `USE_VERTEX_AUTH=true`).
+    *   `VERTEX_LOCATION` (Optional): The Google Cloud region for Vertex AI (e.g., `us-central1`) (Required if `PREFERRED_PROVIDER=google` and `USE_VERTEX_AUTH=true`).
+    *   `PREFERRED_PROVIDER` (Optional): Set to `openai` (default), `google`, `deepseek`, or `anthropic`. This determines the primary backend for mapping `haiku`/`sonnet`.
+    *   `BIG_MODEL` (Optional): The model to map `sonnet` requests to. Defaults to `gpt-4.1` (if `PREFERRED_PROVIDER=openai`) or `gemini-2.5-pro` or `deepseek-reasoner`. Ignored when `PREFERRED_PROVIDER=anthropic`.
+    *   `SMALL_MODEL` (Optional): The model to map `haiku` requests to. Defaults to `gpt-4.1-mini` (if `PREFERRED_PROVIDER=openai`) or `gemini-2.5-flash` or `deepseek-chat`. Ignored when `PREFERRED_PROVIDER=anthropic`.
+
+    **Mapping Logic:**
+    - If `PREFERRED_PROVIDER=openai` (default), `haiku`/`sonnet` map to `SMALL_MODEL`/`BIG_MODEL` prefixed with `openai/`.
+    - If `PREFERRED_PROVIDER=google`, `haiku`/`sonnet` map to `SMALL_MODEL`/`BIG_MODEL` prefixed with `gemini/` *if* those models are in the server's known `GEMINI_MODELS` list (otherwise falls back to OpenAI mapping).
+    - If `PREFERRED_PROVIDER=deepseek`, `haiku`/`sonnet` map to `SMALL_MODEL`/`BIG_MODEL` prefixed with `deepseek/` *if* those models are in the server's known `DEEPSEEK_MODELS` list (otherwise falls back to OpenAI mapping).
+    - If `PREFERRED_PROVIDER=anthropic`, `haiku`/`sonnet` requests are passed directly to Anthropic with the `anthropic/` prefix without remapping to different models.
+
+4.  **Run the server**:
+    ```bash
+    uv run uvicorn server:app --host 0.0.0.0 --port 8082 --reload
+    ```
+    *(`--reload` is optional, for development)*
 
 #### Docker
 
@@ -103,10 +121,10 @@ docker run -d --env-file .env -p 8082:8082 ghcr.io/1rgs/claude-code-proxy:latest
 
 The proxy automatically maps Claude models to either OpenAI or Gemini models based on the configured model:
 
-| Claude Model | Default Mapping | When BIG_MODEL/SMALL_MODEL is a Gemini model |
-|--------------|--------------|---------------------------|
-| haiku | openai/gpt-4o-mini | gemini/[model-name] |
-| sonnet | openai/gpt-4o | gemini/[model-name] |
+| Claude Model | Default Mapping | Google Mapping (if pref) | DeepSeek Mapping (if pref) |
+|--------------|--------------|---------------------------|----------------------------|
+| haiku | openai/gpt-4o-mini | gemini/gemini-2.5-flash | deepseek/deepseek-chat |
+| sonnet | openai/gpt-4o | gemini/gemini-2.5-pro | deepseek/deepseek-reasoner |
 
 ### Supported Models
 
@@ -127,14 +145,20 @@ The following OpenAI models are supported with automatic `openai/` prefix handli
 
 #### Gemini Models
 The following Gemini models are supported with automatic `gemini/` prefix handling:
-- gemini-2.5-pro
 - gemini-2.5-flash
+- gemini-2.5-pro
+
+#### DeepSeek Models
+The following DeepSeek models are supported with automatic `deepseek/` prefix handling:
+- deepseek-chat
+- deepseek-reasoner
 
 ### Model Prefix Handling
 The proxy automatically adds the appropriate prefix to model names:
 - OpenAI models get the `openai/` prefix
 - Gemini models get the `gemini/` prefix
-- The BIG_MODEL and SMALL_MODEL will get the appropriate prefix based on whether they're in the OpenAI or Gemini model lists
+- DeepSeek models get the `deepseek/` prefix
+- The BIG_MODEL and SMALL_MODEL will get the appropriate prefix based on which model list they match.
 
 For example:
 - `gpt-4o` becomes `openai/gpt-4o`
@@ -175,7 +199,16 @@ USE_VERTEX_AUTH=true
 # SMALL_MODEL="gemini-2.5-flash" # Optional, it's the default for Google pref
 ```
 
-**Example 3: Use Direct Anthropic ("Just an Anthropic Proxy" Mode)**
+**Example 3: Use DeepSeek**
+```dotenv
+DEEPSEEK_API_KEY="your-deepseek-key"
+OPENAI_API_KEY="your-openai-key" # Needed for fallback
+PREFERRED_PROVIDER="deepseek"
+# BIG_MODEL="deepseek-reasoner" # Optional, default
+# SMALL_MODEL="deepseek-chat" # Optional, default
+```
+
+**Example 4: Use Direct Anthropic ("Just an Anthropic Proxy" Mode)**
 ```dotenv
 ANTHROPIC_API_KEY="sk-ant-..."
 PREFERRED_PROVIDER="anthropic"
